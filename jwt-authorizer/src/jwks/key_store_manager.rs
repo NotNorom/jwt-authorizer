@@ -5,6 +5,7 @@ use std::{
     time::{Duration, Instant},
 };
 use tokio::sync::Mutex;
+use tracing::trace;
 
 use crate::error::{AuthError, RefreshError};
 
@@ -80,6 +81,7 @@ impl KeyStoreManager {
     }
 
     pub(crate) async fn get_key(&self, header: &jsonwebtoken::Header) -> Result<Arc<KeyData>, AuthError> {
+        trace!("KeyStoreManager get_key header={header:?}");
         let kstore = self.keystore.clone();
         let mut ks_gard = kstore.lock().await;
         let key = match self.refresh.strategy {
@@ -96,8 +98,12 @@ impl KeyStoreManager {
                         jwk
                     } else if ks_gard.can_refresh(self.refresh.refresh_interval, self.refresh.retry_interval) {
                         ks_gard.refresh(&self.key_url, &[("kid", kid)]).await?;
-                        ks_gard.find_kid(kid).ok_or_else(|| AuthError::InvalidKid(kid.to_owned()))?
+                        ks_gard.find_kid(kid).ok_or_else(|| {
+                            trace!("KeyStoreManager get_key KeyNotFound can_refresh=true: NO KID");
+                            AuthError::InvalidKid(kid.to_owned())
+                        })?
                     } else {
+                        trace!("KeyStoreManager get_key KeyNotFound can_refresh=false: NO KID");
                         return Err(AuthError::InvalidKid(kid.to_owned()));
                     }
                 } else {

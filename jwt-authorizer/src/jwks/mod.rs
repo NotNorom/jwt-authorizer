@@ -4,6 +4,7 @@ use jsonwebtoken::{
     jwk::{AlgorithmParameters, Jwk},
     Algorithm, DecodingKey, Header,
 };
+use tracing::trace;
 
 use crate::error::AuthError;
 
@@ -81,7 +82,7 @@ impl KeySet {
         })
     }
 
-    /// Find the key in the set that matches the given key id, if any.
+    /// Find the key in the set that matches the given algorithm, if any.
     pub fn find_alg(&self, alg: &Algorithm) -> Option<&Arc<KeyData>> {
         self.0.iter().find(|k| k.algs.contains(alg))
     }
@@ -92,10 +93,19 @@ impl KeySet {
     }
 
     pub(crate) fn get_key(&self, header: &Header) -> Result<&Arc<KeyData>, AuthError> {
+        trace!("get_key header={header:?}");
         let key = if let Some(ref kid) = header.kid {
-            self.find_kid(kid).ok_or_else(|| AuthError::InvalidKid(kid.to_owned()))?
+            trace!("get_key header has kid");
+            self.find_kid(kid).ok_or_else(|| {
+                trace!("get_key header kid not in store");
+                AuthError::InvalidKid(kid.to_owned())
+            })?
         } else {
-            self.find_alg(&header.alg).ok_or(AuthError::InvalidKeyAlg(header.alg))?
+            trace!("get_key header has not kid, but alg");
+            self.find_alg(&header.alg).ok_or_else(|| {
+                trace!("get_key header alg not in store");
+                AuthError::InvalidKeyAlg(header.alg)
+            })?
         };
         Ok(key)
     }
